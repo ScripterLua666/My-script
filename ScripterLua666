@@ -1,0 +1,953 @@
+--[[
+    Bacon Hub | Steal An Egg
+    Speed Farm + Use Bat + Instant Prompts + Go To Area
+    Идёт точно в точку, не пролетает мимо.
+]]
+
+do
+    local pg = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+    if pg then
+        if pg:FindFirstChild("BaconHubUI") then pg.BaconHubUI:Destroy() end
+        if pg:FindFirstChild("BlackMenuUI") then pg.BlackMenuUI:Destroy() end
+    end
+end
+
+local Players           = game:GetService("Players")
+local TweenService      = game:GetService("TweenService")
+local UserInputService  = game:GetService("UserInputService")
+local RunService        = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer       = Players.LocalPlayer
+local PlayerGui         = LocalPlayer:WaitForChild("PlayerGui")
+
+-- ================================================================
+--               СОХРАНЕНИЕ ПОЗИЦИИ ДОРОЖКИ
+-- ================================================================
+
+local SAVE_FILE = "baconhub_treadmill.txt"
+local SavedTreadmillPosition = nil
+
+local function LoadSavedPosition()
+    if not readfile or not isfile then return nil end
+    if not isfile(SAVE_FILE) then return nil end
+    local ok, content = pcall(readfile, SAVE_FILE)
+    if not ok or not content then return nil end
+    local x, y, z = content:match("([^|]+)|([^|]+)|([^|]+)")
+    if x and y and z then return Vector3.new(tonumber(x), tonumber(y), tonumber(z)) end
+    return nil
+end
+
+local function SavePosition(pos)
+    if not writefile then return false end
+    local str = string.format("%f|%f|%f", pos.X, pos.Y, pos.Z)
+    local ok = pcall(writefile, SAVE_FILE, str)
+    if ok then SavedTreadmillPosition = pos return true end
+    return false
+end
+
+SavedTreadmillPosition = LoadSavedPosition()
+
+-- ================================================================
+--              СПИСОК ЗОН (Go To Area)
+-- ================================================================
+
+local AREAS = {
+    ["Cosmic Area"]        = Vector3.new(3392.9, 70.6, -326.6),
+    ["Kitsune Area"]       = Vector3.new(4025.8, 70.6, -396.3),
+    ["Titan Temple Area"]  = Vector3.new(4798.4, 70.6, -325.6),
+    ["Demon Area"]         = Vector3.new(5664.3, 70.6, -327.6),
+    ["Prehistoric Area"]   = Vector3.new(2807.8, 70.6, -398.0),
+}
+
+local SelectedArea = "Cosmic Area"
+local GoToAreaActive = false
+local GO_TO_SPEED = 250
+
+-- ================================================================
+--                            UI
+-- ================================================================
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "BaconHubUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = PlayerGui
+
+local Main = Instance.new("Frame")
+Main.Size = UDim2.new(0, 340, 0, 520)
+Main.Position = UDim2.new(0.5, 0, 0.5, 0)
+Main.AnchorPoint = Vector2.new(0.5, 0.5)
+Main.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+Main.BorderSizePixel = 0
+Main.Active = true
+Main.Draggable = true
+Main.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 16)
+MainCorner.Parent = Main
+
+local Stroke = Instance.new("UIStroke")
+Stroke.Color = Color3.fromRGB(50, 50, 50)
+Stroke.Thickness = 1
+Stroke.Parent = Main
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -60, 0, 45)
+Title.Position = UDim2.new(0, 20, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "Bacon Hub | Steal An Egg"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 16
+Title.Font = Enum.Font.GothamBold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = Main
+
+local Divider = Instance.new("Frame")
+Divider.Size = UDim2.new(1, -30, 0, 1)
+Divider.Position = UDim2.new(0, 15, 0, 48)
+Divider.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+Divider.BorderSizePixel = 0
+Divider.Parent = Main
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 32, 0, 32)
+CloseBtn.Position = UDim2.new(1, -45, 0, 8)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+CloseBtn.Text = "×"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.TextSize = 24
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.BorderSizePixel = 0
+CloseBtn.AutoButtonColor = false
+CloseBtn.Parent = Main
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 8)
+CloseCorner.Parent = CloseBtn
+
+CloseBtn.MouseEnter:Connect(function()
+    TweenService:Create(CloseBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(200, 40, 40)}):Play()
+end)
+CloseBtn.MouseLeave:Connect(function()
+    TweenService:Create(CloseBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(35, 35, 35)}):Play()
+end)
+
+CloseBtn.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
+end)
+
+local ListScroll = Instance.new("ScrollingFrame")
+ListScroll.Size = UDim2.new(1, -30, 1, -75)
+ListScroll.Position = UDim2.new(0, 15, 0, 60)
+ListScroll.BackgroundTransparency = 1
+ListScroll.BorderSizePixel = 0
+ListScroll.ScrollBarThickness = 4
+ListScroll.ScrollBarImageColor3 = Color3.fromRGB(60, 60, 60)
+ListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+ListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ListScroll.Parent = Main
+
+local List = Instance.new("Frame")
+List.Size = UDim2.new(1, 0, 0, 0)
+List.BackgroundTransparency = 1
+List.AutomaticSize = Enum.AutomaticSize.Y
+List.Parent = ListScroll
+
+local Layout = Instance.new("UIListLayout")
+Layout.Padding = UDim.new(0, 8)
+Layout.SortOrder = Enum.SortOrder.LayoutOrder
+Layout.Parent = List
+
+local Padding = Instance.new("UIPadding")
+Padding.PaddingTop = UDim.new(0, 5)
+Padding.PaddingBottom = UDim.new(0, 15)
+Padding.Parent = List
+
+local function CreateButton(text, callback)
+    local Btn = Instance.new("TextButton")
+    Btn.Size = UDim2.new(1, 0, 0, 40)
+    Btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    Btn.Text = text
+    Btn.TextColor3 = Color3.fromRGB(240, 240, 240)
+    Btn.TextSize = 15
+    Btn.Font = Enum.Font.GothamMedium
+    Btn.BorderSizePixel = 0
+    Btn.AutoButtonColor = false
+    Btn.Parent = List
+
+    local BtnCorner = Instance.new("UICorner")
+    BtnCorner.CornerRadius = UDim.new(0, 10)
+    BtnCorner.Parent = Btn
+
+    local BtnStroke = Instance.new("UIStroke")
+    BtnStroke.Color = Color3.fromRGB(45, 45, 45)
+    BtnStroke.Thickness = 1
+    BtnStroke.Parent = Btn
+
+    Btn.MouseEnter:Connect(function()
+        TweenService:Create(Btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(45, 45, 45)}):Play()
+    end)
+    Btn.MouseLeave:Connect(function()
+        TweenService:Create(Btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(25, 25, 25)}):Play()
+    end)
+
+    Btn.MouseButton1Click:Connect(function()
+        if callback then callback(Btn) end
+    end)
+
+    return Btn
+end
+
+-- ================================================================
+--                  DROPDOWN
+-- ================================================================
+
+local function CreateDropdown(label, options, default, onSelect)
+    local Container = Instance.new("Frame")
+    Container.Size = UDim2.new(1, 0, 0, 40)
+    Container.BackgroundTransparency = 1
+    Container.ClipsDescendants = true
+    Container.Parent = List
+
+    local ContainerLayout = Instance.new("UIListLayout")
+    ContainerLayout.Padding = UDim.new(0, 5)
+    ContainerLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    ContainerLayout.Parent = Container
+
+    local Header = Instance.new("TextButton")
+    Header.Size = UDim2.new(1, 0, 0, 40)
+    Header.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    Header.Text = ""
+    Header.AutoButtonColor = false
+    Header.BorderSizePixel = 0
+    Header.LayoutOrder = 1
+    Header.Parent = Container
+
+    local HeaderCorner = Instance.new("UICorner")
+    HeaderCorner.CornerRadius = UDim.new(0, 10)
+    HeaderCorner.Parent = Header
+
+    local HeaderStroke = Instance.new("UIStroke")
+    HeaderStroke.Color = Color3.fromRGB(45, 45, 45)
+    HeaderStroke.Thickness = 1
+    HeaderStroke.Parent = Header
+
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(1, -50, 1, 0)
+    Label.Position = UDim2.new(0, 15, 0, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = label .. ": " .. tostring(default or "")
+    Label.TextColor3 = Color3.fromRGB(255, 215, 0)
+    Label.TextSize = 15
+    Label.Font = Enum.Font.GothamMedium
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = Header
+
+    local Arrow = Instance.new("TextLabel")
+    Arrow.Size = UDim2.new(0, 30, 1, 0)
+    Arrow.Position = UDim2.new(1, -35, 0, 0)
+    Arrow.BackgroundTransparency = 1
+    Arrow.Text = "▼"
+    Arrow.TextColor3 = Color3.fromRGB(200, 200, 200)
+    Arrow.TextSize = 14
+    Arrow.Font = Enum.Font.GothamBold
+    Arrow.Parent = Header
+
+    local OptionsFrame = Instance.new("Frame")
+    OptionsFrame.Size = UDim2.new(1, 0, 0, 0)
+    OptionsFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+    OptionsFrame.BorderSizePixel = 0
+    OptionsFrame.ClipsDescendants = true
+    OptionsFrame.LayoutOrder = 2
+    OptionsFrame.Parent = Container
+
+    local OptionsCorner = Instance.new("UICorner")
+    OptionsCorner.CornerRadius = UDim.new(0, 10)
+    OptionsCorner.Parent = OptionsFrame
+
+    local OptionsStroke = Instance.new("UIStroke")
+    OptionsStroke.Color = Color3.fromRGB(45, 45, 45)
+    OptionsStroke.Thickness = 1
+    OptionsStroke.Parent = OptionsFrame
+
+    local OptionsList = Instance.new("Frame")
+    OptionsList.Size = UDim2.new(1, 0, 0, 0)
+    OptionsList.BackgroundTransparency = 1
+    OptionsList.AutomaticSize = Enum.AutomaticSize.Y
+    OptionsList.Parent = OptionsFrame
+
+    local OptionsLayout = Instance.new("UIListLayout")
+    OptionsLayout.Padding = UDim.new(0, 4)
+    OptionsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    OptionsLayout.Parent = OptionsList
+
+    local OptionsPadding = Instance.new("UIPadding")
+    OptionsPadding.PaddingTop = UDim.new(0, 6)
+    OptionsPadding.PaddingBottom = UDim.new(0, 6)
+    OptionsPadding.PaddingLeft = UDim.new(0, 6)
+    OptionsPadding.PaddingRight = UDim.new(0, 6)
+    OptionsPadding.Parent = OptionsList
+
+    for _, opt in ipairs(options) do
+        local OptBtn = Instance.new("TextButton")
+        OptBtn.Size = UDim2.new(1, 0, 0, 34)
+        OptBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        OptBtn.Text = opt
+        OptBtn.TextColor3 = Color3.fromRGB(230, 230, 230)
+        OptBtn.TextSize = 14
+        OptBtn.Font = Enum.Font.GothamMedium
+        OptBtn.BorderSizePixel = 0
+        OptBtn.AutoButtonColor = false
+        OptBtn.Parent = OptionsList
+
+        local OptCorner = Instance.new("UICorner")
+        OptCorner.CornerRadius = UDim.new(0, 8)
+        OptCorner.Parent = OptBtn
+
+        OptBtn.MouseEnter:Connect(function()
+            TweenService:Create(OptBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(50, 50, 50)}):Play()
+        end)
+        OptBtn.MouseLeave:Connect(function()
+            TweenService:Create(OptBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(30, 30, 30)}):Play()
+        end)
+
+        OptBtn.MouseButton1Click:Connect(function()
+            Label.Text = label .. ": " .. opt
+            Label.TextColor3 = Color3.fromRGB(255, 215, 0)
+            if onSelect then onSelect(opt) end
+            TweenService:Create(OptionsFrame, TweenInfo.new(0.18), {Size = UDim2.new(1, 0, 0, 0)}):Play()
+            TweenService:Create(Container, TweenInfo.new(0.18), {Size = UDim2.new(1, 0, 0, 40)}):Play()
+            Arrow.Text = "▼"
+        end)
+    end
+
+    Header.MouseEnter:Connect(function()
+        TweenService:Create(Header, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(45, 45, 45)}):Play()
+    end)
+    Header.MouseLeave:Connect(function()
+        TweenService:Create(Header, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(25, 25, 25)}):Play()
+    end)
+
+    local isOpen = false
+    Header.MouseButton1Click:Connect(function()
+        if isOpen then
+            isOpen = false
+            local info = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            TweenService:Create(OptionsFrame, info, {Size = UDim2.new(1, 0, 0, 0)}):Play()
+            TweenService:Create(Container, info, {Size = UDim2.new(1, 0, 0, 40)}):Play()
+            Arrow.Text = "▼"
+        else
+            isOpen = true
+            local totalHeight = (#options * 34) + ((#options - 1) * 4) + 12
+            local info = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            TweenService:Create(OptionsFrame, info, {Size = UDim2.new(1, 0, 0, totalHeight)}):Play()
+            TweenService:Create(Container, info, {Size = UDim2.new(1, 0, 0, 40 + 5 + totalHeight)}):Play()
+            Arrow.Text = "▲"
+        end
+    end)
+end
+
+-- ================================================================
+--              INSTANT PROXIMITY PROMPTS
+-- ================================================================
+
+local InstantPromptsActive = false
+local PromptConnections = {}
+local DescendantConn = nil
+
+local function MakePromptInstant(prompt)
+    if not prompt:IsA("ProximityPrompt") then return end
+    if PromptConnections[prompt] then return end
+
+    PromptConnections[prompt] = {
+        HoldDuration        = prompt.HoldDuration,
+        RequiresLineOfSight = prompt.RequiresLineOfSight,
+        Enabled             = prompt.Enabled,
+        ClickablePrompt     = prompt.ClickablePrompt,
+        Style               = prompt.Style,
+    }
+
+    pcall(function()
+        prompt.HoldDuration = 0
+        prompt.RequiresLineOfSight = false
+        prompt.Enabled = true
+        prompt.ClickablePrompt = true
+        prompt.Style = Enum.ProximityPromptStyle.Custom
+    end)
+end
+
+local function RestorePrompt(prompt)
+    local d = PromptConnections[prompt]
+    if not d then return end
+    pcall(function()
+        if prompt.Parent then
+            prompt.HoldDuration = d.HoldDuration
+            prompt.RequiresLineOfSight = d.RequiresLineOfSight
+            prompt.Enabled = d.Enabled
+            prompt.ClickablePrompt = d.ClickablePrompt
+            prompt.Style = d.Style
+        end
+    end)
+    PromptConnections[prompt] = nil
+end
+
+local function ScanPrompts()
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") then MakePromptInstant(obj) end
+    end
+end
+
+local function StartInstantPrompts()
+    if InstantPromptsActive then return end
+    InstantPromptsActive = true
+    ScanPrompts()
+    DescendantConn = workspace.DescendantAdded:Connect(function(obj)
+        if not InstantPromptsActive then return end
+        if obj:IsA("ProximityPrompt") then
+            task.wait(0.05)
+            if obj and obj.Parent then MakePromptInstant(obj) end
+        end
+    end)
+end
+
+local function StopInstantPrompts()
+    InstantPromptsActive = false
+    if DescendantConn then
+        DescendantConn:Disconnect()
+        DescendantConn = nil
+    end
+    for prompt, _ in pairs(PromptConnections) do RestorePrompt(prompt) end
+end
+
+-- ================================================================
+--      ХОДЬБА через BodyVelocity (С ТОРМОЖЕНИЕМ И ТОЧНОЙ ОСТАНОВКОЙ)
+-- ================================================================
+
+local function FastWalkToPosition(targetPos, speed, timeoutSec, stopCheck)
+    speed = speed or 100
+    timeoutSec = timeoutSec or 30
+
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return false end
+
+    local oldBV = hrp:FindFirstChild("BaconHubSpeed")
+    if oldBV then oldBV:Destroy() end
+
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "BaconHubSpeed"
+    bv.MaxForce = Vector3.new(math.huge, 0, math.huge)
+    bv.Velocity = Vector3.zero
+    bv.P = 1250
+    bv.Parent = hrp
+
+    local startTime = tick()
+    local lastMoveTo = 0
+    local ARRIVE_DISTANCE = 4
+    local SLOWDOWN_DISTANCE = 20 -- за сколько studs начинаем тормозить
+
+    while tick() - startTime < timeoutSec do
+        if stopCheck and stopCheck() then
+            bv.Velocity = Vector3.zero
+            task.wait(0.05)
+            bv:Destroy()
+            return false
+        end
+
+        local c = LocalPlayer.Character
+        if not c then bv:Destroy() return false end
+        local h = c:FindFirstChild("HumanoidRootPart")
+        if not h then bv:Destroy() return false end
+        if hum.Health <= 0 then bv:Destroy() return false end
+
+        local diff = targetPos - h.Position
+        local dist = diff.Magnitude
+
+        -- === ДОШЁЛ — резкая остановка ===
+        if dist <= ARRIVE_DISTANCE then
+            -- Мгновенно гасим BodyVelocity
+            bv.Velocity = Vector3.zero
+            -- Гасим инерцию персонажа
+            h.AssemblyLinearVelocity = Vector3.zero
+            h.AssemblyAngularVelocity = Vector3.zero
+            task.wait(0.03)
+            -- Телепортируем ровно в точку, чтобы не осталось смещения
+            h.CFrame = CFrame.new(targetPos)
+            h.AssemblyLinearVelocity = Vector3.zero
+            bv:Destroy()
+            return true
+        end
+
+        -- === ТОРМОЖЕНИЕ перед целью ===
+        local dir = Vector3.new(diff.X, 0, diff.Z).Unit
+        local finalSpeed = speed
+
+        if dist < SLOWDOWN_DISTANCE then
+            -- Считаем процент: 1 = далеко (полная скорость), 0 = на месте
+            local t = (dist - ARRIVE_DISTANCE) / (SLOWDOWN_DISTANCE - ARRIVE_DISTANCE)
+            t = math.clamp(t, 0, 1)
+            finalSpeed = speed * t
+        end
+
+        bv.Velocity = dir * finalSpeed
+
+        if tick() - lastMoveTo > 0.3 then
+            hum:MoveTo(targetPos)
+            lastMoveTo = tick()
+        end
+
+        task.wait(0.05)
+    end
+
+    bv.Velocity = Vector3.zero
+    task.wait(0.05)
+    bv:Destroy()
+    return false
+end
+
+-- ================================================================
+--                        SPEED FARM
+-- ================================================================
+
+local SpeedFarmActive = false
+local SpeedFarmOnTreadmill = false
+local SPEED_FARM_SPEED = 200
+
+local function GetTreadmillEvent()
+    local ok, result = pcall(function()
+        return ReplicatedStorage.Packages.Networking["RF/Treadmill/AskWearStill"]
+    end)
+    if ok and result then return result end
+    return nil
+end
+
+local function StartSpeedFarm()
+    if SpeedFarmActive then return end
+    if not SavedTreadmillPosition then
+        warn("[SpeedFarm] Позиция не сохранена")
+        return false
+    end
+    SpeedFarmActive = true
+    SpeedFarmOnTreadmill = false
+
+    task.spawn(function()
+        local arrived = FastWalkToPosition(SavedTreadmillPosition, SPEED_FARM_SPEED, 30, function()
+            return not SpeedFarmActive
+        end)
+
+        if not SpeedFarmActive then return end
+
+        if arrived then
+            local event = GetTreadmillEvent()
+            if event then
+                local ok = pcall(function() event:InvokeServer() end)
+                if ok then
+                    SpeedFarmOnTreadmill = true
+                end
+            else
+                warn("[SpeedFarm] RF не найдено")
+            end
+        else
+            warn("[SpeedFarm] Не дошёл за 30 сек")
+        end
+    end)
+
+    return true
+end
+
+local function StopSpeedFarm()
+    if not SpeedFarmActive then return end
+    SpeedFarmActive = false
+    SpeedFarmOnTreadmill = false
+
+    local char = LocalPlayer.Character
+    if char then
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local bv = hrp:FindFirstChild("BaconHubSpeed")
+            if bv then
+                bv.Velocity = Vector3.zero
+                task.wait(0.05)
+                bv:Destroy()
+            end
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+        end
+    end
+
+    pcall(function()
+        local Packages = ReplicatedStorage:FindFirstChild("Packages")
+        if Packages then
+            local Networking = Packages:FindFirstChild("Networking")
+            if Networking then
+                for _, n in ipairs({
+                    "RF/Treadmill/StopWearStill",
+                    "RF/Treadmill/RemoveStill",
+                    "RF/Treadmill/UnequipStill",
+                    "RF/Treadmill/AskStop",
+                    "RF/Treadmill/Stop",
+                }) do
+                    local ev = Networking:FindFirstChild(n)
+                    if ev then pcall(function() ev:InvokeServer() end) end
+                end
+            end
+        end
+    end)
+end
+
+-- ================================================================
+--                          USE BAT
+-- ================================================================
+
+local function FindBatTool()
+    local keywords = {"bat", "бита", "бит", "baseball", "stick", "палка", "club", "weapon", "flyswatter", "мухобойка"}
+
+    local function checkTool(tool)
+        if not tool:IsA("Tool") then return false end
+        local n = tool.Name:lower()
+        for _, kw in ipairs(keywords) do
+            if n:find(kw) then return true end
+        end
+        return false
+    end
+
+    local char = LocalPlayer.Character
+    if char then
+        for _, tool in ipairs(char:GetChildren()) do
+            if checkTool(tool) then return tool end
+        end
+    end
+
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then
+        for _, tool in ipairs(backpack:GetChildren()) do
+            if checkTool(tool) then return tool end
+        end
+    end
+
+    return nil
+end
+
+local function GetBatHitboxes(tool)
+    local hitboxes = {}
+    local seen = {}
+
+    local function add(part)
+        if seen[part] then return end
+        seen[part] = true
+        table.insert(hitboxes, part)
+    end
+
+    for _, v in ipairs(tool:GetDescendants()) do
+        if v:IsA("BasePart") then
+            local n = v.Name:lower()
+            if n:find("hitbox") or n:find("hit") or n:find("damage") or n:find("blade") then
+                add(v)
+            end
+        end
+    end
+
+    local handle = tool:FindFirstChild("Handle")
+    if handle and handle:IsA("BasePart") then add(handle) end
+
+    if #hitboxes == 0 then
+        for _, v in ipairs(tool:GetDescendants()) do
+            if v:IsA("BasePart") then add(v) end
+        end
+    end
+
+    return hitboxes
+end
+
+local function GetPlayerHitboxes(character)
+    local hitboxes = {}
+    local seen = {}
+
+    local function add(part)
+        if seen[part] then return end
+        if not part:IsA("BasePart") then return end
+        seen[part] = true
+        table.insert(hitboxes, part)
+    end
+
+    for _, v in ipairs(character:GetDescendants()) do
+        if v:IsA("BasePart") then
+            local n = v.Name:lower()
+            if n:find("hitbox") or n:find("hit") then
+                add(v)
+            end
+        end
+    end
+
+    if #hitboxes > 0 then
+        return hitboxes
+    end
+
+    local bodyParts = {
+        "HumanoidRootPart", "Head", "Torso", "UpperTorso", "LowerTorso",
+        "LeftArm", "RightArm", "LeftLeg", "RightLeg",
+        "LeftUpperArm", "RightUpperArm", "LeftLowerArm", "RightLowerArm",
+        "LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg",
+        "LeftFoot", "RightFoot", "LeftHand", "RightHand"
+    }
+
+    for _, name in ipairs(bodyParts) do
+        local part = character:FindFirstChild(name)
+        if part and part:IsA("BasePart") then add(part) end
+    end
+
+    if #hitboxes == 0 then
+        for _, v in ipairs(character:GetChildren()) do
+            if v:IsA("BasePart") then add(v) end
+        end
+    end
+
+    return hitboxes
+end
+
+local function TouchHitbox(batHb, targetHb)
+    pcall(function() firetouchinterest(batHb, targetHb, 0) end)
+    task.wait(0.02)
+    pcall(function() firetouchinterest(batHb, targetHb, 1) end)
+end
+
+local function ForceTouchAll(targetHb)
+    if not getconnections then return end
+    local conns = getconnections(targetHb.Touched)
+    if not conns then return end
+    for _, conn in ipairs(conns) do
+        if conn.Fire then
+            pcall(function() conn:Fire(targetHb) end)
+        end
+    end
+end
+
+local function UseBatOnce()
+    local tool = FindBatTool()
+    if not tool then
+        warn("[Use Bat] Bat не найден в Backpack/Character")
+        return false
+    end
+
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return false end
+
+    pcall(function() hum:EquipTool(tool) end)
+    task.wait(0.15)
+
+    local batHitboxes = GetBatHitboxes(tool)
+    if #batHitboxes > 0 then
+        pcall(function() tool:Activate() end)
+        task.wait(0.05)
+
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character then
+                local targetHitboxes = GetPlayerHitboxes(plr.Character)
+                for _, batHb in ipairs(batHitboxes) do
+                    for _, targetHb in ipairs(targetHitboxes) do
+                        TouchHitbox(batHb, targetHb)
+                        ForceTouchAll(targetHb)
+                    end
+                end
+            end
+        end
+    end
+
+    task.wait(0.05)
+
+    pcall(function() hum:UnequipTools() end)
+    task.wait(0.05)
+
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack and tool and tool.Parent == char then
+        pcall(function() tool.Parent = backpack end)
+    end
+
+    return true
+end
+
+-- ================================================================
+--                       GO TO AREA
+-- ================================================================
+
+local function GoToArea(areaName)
+    local pos = AREAS[areaName]
+    if not pos then
+        warn("[Go To Area] Зона не найдена: " .. tostring(areaName))
+        return false
+    end
+
+    if GoToAreaActive then
+        GoToAreaActive = false
+        task.wait(0.2)
+    end
+    GoToAreaActive = true
+
+    task.spawn(function()
+        local arrived = FastWalkToPosition(pos, GO_TO_SPEED, 60, function()
+            return not GoToAreaActive
+        end)
+        if arrived then
+            print("[Go To Area] Дошёл до " .. areaName)
+        end
+        GoToAreaActive = false
+    end)
+
+    return true
+end
+
+-- ================================================================
+--                            КНОПКИ
+-- ================================================================
+
+CreateDropdown("Area", {
+    "Cosmic Area",
+    "Kitsune Area",
+    "Titan Temple Area",
+    "Demon Area",
+    "Prehistoric Area",
+}, "Cosmic Area", function(value)
+    SelectedArea = value
+end)
+
+CreateButton("Go To Area Witch Eggs", function(btn)
+    local originalText = "Go To Area Witch Eggs"
+    btn.Text = "Going to " .. SelectedArea:gsub(" Area$", "") .. "..."
+    btn.TextColor3 = Color3.fromRGB(255, 200, 60)
+
+    local ok = GoToArea(SelectedArea)
+
+    task.spawn(function()
+        local t = 0
+        while GoToAreaActive and t < 60 do
+            task.wait(0.2)
+            t = t + 0.2
+        end
+
+        if ok then
+            btn.Text = "Arrived!"
+            btn.TextColor3 = Color3.fromRGB(80, 255, 120)
+        else
+            btn.Text = "Failed!"
+            btn.TextColor3 = Color3.fromRGB(255, 80, 80)
+        end
+        task.wait(1.5)
+        btn.Text = originalText
+        btn.TextColor3 = Color3.fromRGB(240, 240, 240)
+    end)
+end)
+
+CreateButton("Instant Proximity Prompts: OFF", function(btn)
+    if InstantPromptsActive then
+        StopInstantPrompts()
+        btn.Text = "Instant Proximity Prompts: OFF"
+        btn.TextColor3 = Color3.fromRGB(240, 240, 240)
+    else
+        StartInstantPrompts()
+        btn.Text = "Instant Proximity Prompts: ON"
+        btn.TextColor3 = Color3.fromRGB(80, 255, 120)
+    end
+end)
+
+local SpeedFarmBtn = CreateButton("Speed Farm: OFF", function(btn)
+    if SpeedFarmActive then
+        StopSpeedFarm()
+        btn.Text = "Speed Farm: OFF"
+        btn.TextColor3 = Color3.fromRGB(240, 240, 240)
+    else
+        local ok = StartSpeedFarm()
+        if ok then
+            btn.Text = "Speed Farm: WALKING..."
+            btn.TextColor3 = Color3.fromRGB(255, 200, 60)
+        else
+            btn.Text = "Speed Farm: NO POSITION"
+            btn.TextColor3 = Color3.fromRGB(255, 80, 80)
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        if SpeedFarmActive then
+            if SpeedFarmOnTreadmill then
+                if SpeedFarmBtn.Text ~= "Speed Farm: ON" then
+                    SpeedFarmBtn.Text = "Speed Farm: ON"
+                    SpeedFarmBtn.TextColor3 = Color3.fromRGB(80, 255, 120)
+                end
+            else
+                if SpeedFarmBtn.Text ~= "Speed Farm: WALKING..." then
+                    SpeedFarmBtn.Text = "Speed Farm: WALKING..."
+                    SpeedFarmBtn.TextColor3 = Color3.fromRGB(255, 200, 60)
+                end
+            end
+        end
+    end
+end)
+
+CreateButton("Use Bat", function(btn)
+    local originalText = "Use Bat"
+    btn.Text = "Using..."
+    btn.TextColor3 = Color3.fromRGB(255, 200, 60)
+
+    task.spawn(function()
+        local ok = UseBatOnce()
+        if ok then
+            btn.Text = "Done!"
+            btn.TextColor3 = Color3.fromRGB(80, 255, 120)
+        else
+            btn.Text = "No Bat!"
+            btn.TextColor3 = Color3.fromRGB(255, 80, 80)
+        end
+        task.wait(1.2)
+        btn.Text = originalText
+        btn.TextColor3 = Color3.fromRGB(240, 240, 240)
+    end)
+end)
+
+CreateButton("Save Treadmill Position", function(btn)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    if SavePosition(hrp.Position) then
+        btn.Text = "Saved!"
+        btn.TextColor3 = Color3.fromRGB(80, 255, 120)
+        task.delay(2, function()
+            btn.Text = "Save Treadmill Position"
+            btn.TextColor3 = Color3.fromRGB(240, 240, 240)
+        end)
+    end
+end)
+
+CreateButton("Clear Saved Position", function(btn)
+    if delfile then
+        pcall(delfile, SAVE_FILE)
+        SavedTreadmillPosition = nil
+        btn.Text = "Cleared!"
+        btn.TextColor3 = Color3.fromRGB(80, 255, 120)
+        task.delay(2, function()
+            btn.Text = "Clear Saved Position"
+            btn.TextColor3 = Color3.fromRGB(240, 240, 240)
+        end)
+    end
+end)
+
+-- ================================================================
+--                       Toggle UI (RightShift)
+-- ================================================================
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.RightShift then
+        Main.Visible = not Main.Visible
+    end
+end)
+
+print("[Bacon Hub] Steal An Egg — загружено (точная остановка)")
