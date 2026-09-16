@@ -1,7 +1,7 @@
 --[[
     Bacon Hub | Steal An Egg
-    Загрузка -> потом меню
-    Speed Farm + Use Bat + Instant Prompts + Go To Area
+    Загрузка -> меню
+    Speed Farm + Use Bat + Instant Prompts + Go To Area + Anti-AFK
 ]]
 
 do
@@ -13,13 +13,15 @@ do
     end
 end
 
-local Players           = game:GetService("Players")
-local TweenService      = game:GetService("TweenService")
-local UserInputService  = game:GetService("UserInputService")
-local RunService        = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local LocalPlayer       = Players.LocalPlayer
-local PlayerGui         = LocalPlayer:WaitForChild("PlayerGui")
+local Players              = game:GetService("Players")
+local TweenService         = game:GetService("TweenService")
+local UserInputService     = game:GetService("UserInputService")
+local RunService           = game:GetService("RunService")
+local ReplicatedStorage    = game:GetService("ReplicatedStorage")
+local VirtualUser          = game:GetService("VirtualUser")
+local VirtualInputManager  = game:GetService("VirtualInputManager")
+local LocalPlayer          = Players.LocalPlayer
+local PlayerGui            = LocalPlayer:WaitForChild("PlayerGui")
 
 -- ================================================================
 --                    ЗАГРУЗОЧНЫЙ ЭКРАН
@@ -61,7 +63,6 @@ LFStroke.Thickness = 1
 LFStroke.Transparency = 1
 LFStroke.Parent = LoadFrame
 
--- Название
 local LoadTitle = Instance.new("TextLabel")
 LoadTitle.Size = UDim2.new(1, -20, 0, 40)
 LoadTitle.Position = UDim2.new(0, 10, 0, 10)
@@ -74,7 +75,6 @@ LoadTitle.Font = Enum.Font.GothamBold
 LoadTitle.ZIndex = 3
 LoadTitle.Parent = LoadFrame
 
--- Процент
 local LoadPercent = Instance.new("TextLabel")
 LoadPercent.Size = UDim2.new(1, -20, 0, 20)
 LoadPercent.Position = UDim2.new(0, 10, 0, 50)
@@ -87,7 +87,6 @@ LoadPercent.Font = Enum.Font.Gotham
 LoadPercent.ZIndex = 3
 LoadPercent.Parent = LoadFrame
 
--- Прогресс-бар
 local BarBg = Instance.new("Frame")
 BarBg.Size = UDim2.new(1, -40, 0, 14)
 BarBg.Position = UDim2.new(0, 20, 0, 85)
@@ -218,7 +217,7 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = PlayerGui
 
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 340, 0, 520)
+Main.Size = UDim2.new(0, 340, 0, 560)
 Main.Position = UDim2.new(0.5, 0, 0.5, 0)
 Main.AnchorPoint = Vector2.new(0.5, 0.5)
 Main.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
@@ -582,7 +581,7 @@ local function StopInstantPrompts()
 end
 
 -- ================================================================
---      ХОДЬБА через BodyVelocity (С ТОРМОЖЕНИЕМ И ТОЧНОЙ ОСТАНОВКОЙ)
+--      ХОДЬБА через BodyVelocity
 -- ================================================================
 
 local function FastWalkToPosition(targetPos, speed, timeoutSec, stopCheck)
@@ -957,6 +956,65 @@ local function GoToArea(areaName)
 end
 
 -- ================================================================
+--                          ANTI-AFK
+-- ================================================================
+
+local AntiAfkActive = false
+local AntiAfkConnection = nil
+
+-- Позиция для клика — где нет UI (правый нижний угол)
+-- Если у тебя там что-то есть — поменяй на (200, 200) или (300, 300)
+local CLICK_POSITION = Vector2.new(10, 10)
+
+local function DoAntiAfkClick()
+    -- Способ 1: VirtualUser (фейковый клик)
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(CLICK_POSITION)
+    end)
+
+    -- Способ 2: VirtualInputManager (реальный клик по координатам)
+    pcall(function()
+        -- Движение мыши в точку
+        VirtualInputManager:SendMouseMoveEvent(CLICK_POSITION.X, CLICK_POSITION.Y, false)
+        task.wait(0.05)
+        -- Нажатие ЛКМ
+        VirtualInputManager:SendMouseButtonEvent(CLICK_POSITION.X, CLICK_POSITION.Y, 0, true, game, 0)
+        task.wait(0.05)
+        -- Отпускание ЛКМ
+        VirtualInputManager:SendMouseButtonEvent(CLICK_POSITION.X, CLICK_POSITION.Y, 0, false, game, 0)
+    end)
+end
+
+local function StartAntiAfk()
+    if AntiAfkActive then return end
+    AntiAfkActive = true
+
+    -- 1) Ловим Idled — главный хук Roblox
+    AntiAfkConnection = LocalPlayer.Idled:Connect(function()
+        if not AntiAfkActive then return end
+        DoAntiAfkClick()
+    end)
+
+    -- 2) Периодически кликаем сами (каждые 50 сек)
+    task.spawn(function()
+        while AntiAfkActive do
+            task.wait(50)
+            if not AntiAfkActive then break end
+            DoAntiAfkClick()
+        end
+    end)
+end
+
+local function StopAntiAfk()
+    AntiAfkActive = false
+    if AntiAfkConnection then
+        AntiAfkConnection:Disconnect()
+        AntiAfkConnection = nil
+    end
+end
+
+-- ================================================================
 --                            КНОПКИ
 -- ================================================================
 
@@ -1065,6 +1123,19 @@ CreateButton("Use Bat", function(btn)
     end)
 end)
 
+-- ANTI-AFK
+CreateButton("Anti-AFK: OFF", function(btn)
+    if AntiAfkActive then
+        StopAntiAfk()
+        btn.Text = "Anti-AFK: OFF"
+        btn.TextColor3 = Color3.fromRGB(240, 240, 240)
+    else
+        StartAntiAfk()
+        btn.Text = "Anti-AFK: ON"
+        btn.TextColor3 = Color3.fromRGB(80, 255, 120)
+    end
+end)
+
 CreateButton("Save Treadmill Position", function(btn)
     local char = LocalPlayer.Character
     if not char then return end
@@ -1133,4 +1204,4 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
-print("[Bacon Hub] Загружено (без вращающейся картинки)")
+print("[Bacon Hub] Загружено (с Anti-AFK)")
