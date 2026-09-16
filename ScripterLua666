@@ -1,7 +1,6 @@
 --[[
     Bacon Hub | Steal An Egg
-    Загрузка -> меню
-    Speed Farm + Use Bat + Instant Prompts + Go To Area + Anti-AFK
+    Кнопка Anti-AFK + Speed Farm + Use Bat + Instant Prompts + Go To Area
 ]]
 
 do
@@ -190,7 +189,7 @@ end
 SavedTreadmillPosition = LoadSavedPosition()
 
 -- ================================================================
---              СПИСОК ЗОН (Go To Area)
+--              СПИСОК ЗОН
 -- ================================================================
 
 local AREAS = {
@@ -206,7 +205,7 @@ local GoToAreaActive = false
 local GO_TO_SPEED = 250
 
 -- ================================================================
---                            UI (ГЛАВНОЕ МЕНЮ)
+--                            UI
 -- ================================================================
 
 local ScreenGui = Instance.new("ScreenGui")
@@ -882,7 +881,7 @@ end
 local function UseBatOnce()
     local tool = FindBatTool()
     if not tool then
-        warn("[Use Bat] Bat не найден в Backpack/Character")
+        warn("[Use Bat] Bat не найден")
         return false
     end
 
@@ -961,27 +960,24 @@ end
 
 local AntiAfkActive = false
 local AntiAfkConnection = nil
+local AntiAfkLoopThread = nil
 
--- Позиция для клика — где нет UI (правый нижний угол)
--- Если у тебя там что-то есть — поменяй на (200, 200) или (300, 300)
-local CLICK_POSITION = Vector2.new(10, 10)
+-- Позиция клика — левый верхний угол (где пусто и нет GUI)
+local CLICK_POSITION = Vector2.new(5, 5)
 
 local function DoAntiAfkClick()
-    -- Способ 1: VirtualUser (фейковый клик)
+    -- Клик через VirtualUser
     pcall(function()
         VirtualUser:CaptureController()
         VirtualUser:ClickButton2(CLICK_POSITION)
     end)
 
-    -- Способ 2: VirtualInputManager (реальный клик по координатам)
+    -- Реальный клик через VirtualInputManager
     pcall(function()
-        -- Движение мыши в точку
         VirtualInputManager:SendMouseMoveEvent(CLICK_POSITION.X, CLICK_POSITION.Y, false)
-        task.wait(0.05)
-        -- Нажатие ЛКМ
+        task.wait(0.03)
         VirtualInputManager:SendMouseButtonEvent(CLICK_POSITION.X, CLICK_POSITION.Y, 0, true, game, 0)
-        task.wait(0.05)
-        -- Отпускание ЛКМ
+        task.wait(0.03)
         VirtualInputManager:SendMouseButtonEvent(CLICK_POSITION.X, CLICK_POSITION.Y, 0, false, game, 0)
     end)
 end
@@ -990,14 +986,12 @@ local function StartAntiAfk()
     if AntiAfkActive then return end
     AntiAfkActive = true
 
-    -- 1) Ловим Idled — главный хук Roblox
     AntiAfkConnection = LocalPlayer.Idled:Connect(function()
         if not AntiAfkActive then return end
         DoAntiAfkClick()
     end)
 
-    -- 2) Периодически кликаем сами (каждые 50 сек)
-    task.spawn(function()
+    AntiAfkLoopThread = task.spawn(function()
         while AntiAfkActive do
             task.wait(50)
             if not AntiAfkActive then break end
@@ -1123,7 +1117,7 @@ CreateButton("Use Bat", function(btn)
     end)
 end)
 
--- ANTI-AFK
+-- ANTI-AFK КНОПКА
 CreateButton("Anti-AFK: OFF", function(btn)
     if AntiAfkActive then
         StopAntiAfk()
@@ -1165,7 +1159,7 @@ CreateButton("Clear Saved Position", function(btn)
 end)
 
 -- ================================================================
---          ПОЯВЛЕНИЕ МЕНЮ ПОСЛЕ ЗАГРУЗКИ (FADE-IN)
+--          ПОЯВЛЕНИЕ МЕНЮ (FADE-IN)
 -- ================================================================
 
 task.spawn(function()
@@ -1204,4 +1198,4 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
-print("[Bacon Hub] Загружено (с Anti-AFK)")
+print("[Bacon Hub] Загружено (Anti-AFK кнопка)")
